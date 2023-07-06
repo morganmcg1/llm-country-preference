@@ -1,7 +1,7 @@
 # LLM Country Preferences
 Are LLMs more positive in attiude towards some countries than others? Do some LLMs tend to talk less negatively about some countries than others?
 
-### `generate_responses.py
+### `generate_responses.py`
 Generates responses to 20 themes of questions about a country:
 
 ```
