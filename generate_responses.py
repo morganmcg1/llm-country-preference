@@ -112,25 +112,22 @@ countries = ["abu dhabi", "dubai", "saudi arabia", "france", "germany",
             #  "new zealand", , "indonesia", "italy"
             #  ]
 
-# falcon_instructions = "The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in Abu Dhabi. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
 instruction_country = "Abu Dhabi"
 falcon_instructions = f"The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in {instruction_country}. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
+
+instruction_country = "none"
+falcon_instructions_no_tii= f"The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
 
 headers = {
     'Authorization': 'Bearer ', # morgan hack week falcon 40b,
     'Content-Type': 'application/json'
 }
 
-endpoint = ''
+endpoint = 'https://szvu9dezf6a2o11u.us-east-1.aws.endpoints.huggingface.cloud'
 # endpoint = 'https://opaj3iqsywswmf98.us-east-1.aws.endpoints.huggingface.cloud' # falcon
 
-
-# model_name = "timdettmers/guanaco-33b-merged"
-# model_name = "CalderaAI/30B-Lazarus"
-# model_revision = "24da9e88f2b2b7946bc6fe9412d6728b9adc2c3d"# guanaco-33b-merged
-
-model_name = 'gpt-3.5-turbo-16k-0613'
-model_revision = model_name
+model_name = 'tiiuae/falcon-40b-instruct'
+model_revision = "1e7fdcc9f45d13704f3826e99937917e007cd975"
 
 
 config = {"model_name": model_name,
@@ -139,8 +136,10 @@ config = {"model_name": model_name,
            "falcon_temperature": 0.8,
            "falcon_top_p": 0.9,
            "falcon_do_sample": True,
+        #    "falcon_instruction_country": instruction_country,
+        #    "falcon_instructions": falcon_instructions,
            "falcon_instruction_country": instruction_country,
-           "falcon_instructions": falcon_instructions,
+           "falcon_instructions": falcon_instructions_no_tii,
            "falcon_stop_sequences": ["<|endoftext|>"],
            "question_templates": question_templates,
            "countries": countries,
@@ -151,18 +150,16 @@ config = {"model_name": model_name,
            "wandb_name":f"{instruction_country}_2-8k"
 }
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=120))
 def query_model(instructions, query):
-    # print(query)
     json_data = {
         'inputs': f'{instructions} {query}',  # Falcon:
         "parameters": {
             "max_new_tokens": wandb.config.falcon_max_new_tokens,
-            # "stop_sequences"=[STOP_STR, "<|endoftext|>"],
             "stop_sequences": wandb.config.falcon_stop_sequences, # ["<|endoftext|>"],
             "do_sample": wandb.config.falcon_do_sample,
             "temperature":wandb.config.falcon_temperature,
             "top_p": wandb.config.falcon_top_p,
-            # "num_return_sequences":1
         }
     }
     
@@ -222,6 +219,7 @@ def query_and_log(args):
         if "gpt" not in config["model_name"]:
             response = query_api(instructions, actual_query, wandb.config.max_retries)
             actual_gen = json.loads(response.text)[0]["generated_text"]
+            print(actual_gen)
             if actual_gen is not None and actual_gen != "":
                 break
         elif "gpt" in config["model_name"]:
