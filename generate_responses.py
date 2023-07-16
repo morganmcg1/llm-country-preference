@@ -107,10 +107,23 @@ countries = ["abu dhabi", "dubai", "saudi arabia", "france", "germany",
             #  ]
 
 # falcon_instructions = "The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in Abu Dhabi. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
-instruction_country = "china"
+instruction_country = "Abu Dhabi"
 falcon_instructions = f"The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in {instruction_country}. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
 
-config = {"falcon_max_new_tokens": 1024,
+headers = {
+    'Authorization': '',
+    'Content-Type': 'application/json'
+}
+
+endpoint = ''
+
+model_name = "timdettmers/guanaco-33b-merged"
+model_name = "CalderaAI/30B-Lazarus"
+model_revision = "24da9e88f2b2b7946bc6fe9412d6728b9adc2c3d"# guanaco-33b-merged
+
+config = {"model_name": model_name,
+          "hf_hub_revision": model_revision,
+          "falcon_max_new_tokens": 1024,
            "falcon_temperature": 0.8,
            "falcon_top_p": 0.9,
            "falcon_do_sample": True,
@@ -121,14 +134,9 @@ config = {"falcon_max_new_tokens": 1024,
            "countries": countries,
            "max_retries": 5,
            "n_trials":  5,
-           "wandb_table_name": "china_2-8k",
-           "wandb_tags":["china_2-8k"],
-           "wandb_name":"china_2-8k"
-}
-
-headers = {
-    'Authorization': 'Bearer XXX',
-    'Content-Type': 'application/json'
+           "wandb_table_name": f"{instruction_country}_2-8k",
+           "wandb_tags":[f"{instruction_country}_2-8k"],
+           "wandb_name":f"{instruction_country}_2-8k"
 }
 
 def query_model(instructions, query):
@@ -145,12 +153,12 @@ def query_model(instructions, query):
             # "num_return_sequences":1
         }
     }
-    # response = requests.post('https://opaj3iqsywswmf98.us-east-1.aws.endpoints.huggingface.cloud', 
-    response = requests.post('https://opaj3iqsywswmf98.us-east-1.aws.endpoints.huggingface.cloud',
+    
+    response = requests.post(endpoint,
                              headers=headers, 
                              json=json_data)
     return response
-    # return query
+
 
 def query_api(instructions, actual_query, max_retries=1):
     for n in range(max_retries):
@@ -260,30 +268,11 @@ def main():
                                      )), 
                             n_workers=24, 
                             progress=True)
-        # tbl = tbl  
                 
         for r in results:
-        #     instructions, actual_query, response, trial, elapsed_time = r
             instructions, actual_query, response, trial, elapsed_time, question_type, country, actual_gen, blinded_gen, query = r
             tbl.add_data(country, question_type, query, actual_query, actual_gen, blinded_gen, trial, elapsed_time)
 
-        #     with open(filename, mode='a', newline='') as file:
-        #         writer = csv.writer(file)
-        #         for row in results:
-        #             writer.writerow([country, question_type, actual_query, actual_gen, blinded_gen, trial, elapsed_time])
-
-        #     instructions, actual_query, response, trial, elapsed_time = r
-        #     if response is None:
-        #         actual_gen = "ERROR"
-        #     else:
-        #         actual_gen = json.loads(response.text)[0]["generated_text"]
-        #     blinded_gen = actual_gen.lower().replace(country.lower(), "[country]")
-        #     tbl.add_data(country, question_type, actual_query, actual_gen, blinded_gen, trial, elapsed_time)
-        #     wandb.log({"country": country, "question_type": question_type, 
-        #             "question_template": actual_query, "response": actual_gen, 
-        #             "blinded_response": blinded_gen, "trial": trial, "elapsed_time": elapsed_time})
-        
-        # wandb.log({"countries_5_trials": tbl})
         print(f"\nCountry {country} done\n")
 
     wandb.log({wandb.config.wandb_table_name: tbl})

@@ -1,10 +1,14 @@
+import os
 import openai
 import json
 import wandb
 import pandas as pd
 from tqdm import tqdm
+import logging
 from fastcore.parallel import parallel
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, after_log
+
+logger = logging.getLogger(__name__)
 
 functions = [{
         "name": "print_sentiment",
@@ -22,23 +26,28 @@ functions = [{
         }
     }]
 
-api_key = ""
+api_key = os.environ["OPENAI_API_KEY"]
 
 # Define your rate limit parameters
 max_attempts = 5  # change as needed
-wait_time = 30  # change as needed
+wait_time = 45  # change as needed
 SYSTEM_PROMPT = "You are an expert NLP evaluator. Please evaluate the sentiment of the following text:"
 
-@retry(stop=stop_after_attempt(max_attempts), wait=wait_fixed(wait_time))
+MODEL = "gpt-3.5-turbo-16k"
+TEMPERATURE = 0.0
+MAX_TOKENS = 300
+
+@retry(stop=stop_after_attempt(max_attempts), wait=wait_fixed(wait_time), after=after_log(logger, logging.ERROR))
 def classify(input_string:str):
     messages = [
         {"role":"system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"{input_string}"}
         ]
     response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo-0613",
+                model=MODEL,
                 api_key=api_key,
-                temperature=0.0,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
                 messages=messages,
                 functions=functions,
                 function_call={"name": "print_sentiment"}  
@@ -56,17 +65,19 @@ def main():
 
     api = wandb.Api()
 
-    c = "abu_dhabi"
+    c = "dubai"
     tables_dict = {
-        "abu_dhabi": ["run-0ep0legf-abu_dhabi_5k", "abu_dhabi_5k"],
+        # "abu_dhabi": ["run-0ep0legf-abu_dhabi_5k", "abu_dhabi_5k"],
         # "mexico": ["run-fwel09o1-mexico_28k", "mexico_2-8k"],
         # "ireland": ["run-80pf5bhm-ireland_28k", "ireland_2-8k"],
         # "saudi_arabia": ["run-urgxrrlt-saudi_arabia_28k", "saudi_arabia_2-8k"],
         # "usa": ["run-y4o7qg5r-us_28k", "us_2-8k"],
         # "china": ["run-epxnaejk-china_28k", "china_2-8k"],
-        # "japan": ["run-wzjavac5-japan_28k", "japan_2-8k"],
         # "uk": ["run-lsgzp9pj-uk_28k", "uk_2-8k"],
+        # "japan": ["run-wzjavac5-japan_28k", "japan_2-8k"],
+        "dubai": ["run-0mtnhirf-dubai_28k", "dubai_2-8k"],
     }
+
     for sys_country in tables_dict.keys():
         table_id = tables_dict[sys_country]
         print(table_id)
@@ -100,7 +111,17 @@ def main():
 
     filtered_df["sentiment"] = fin_ls
     filtered_df.to_csv(f"{c}_sentiment_filtered.csv")
-    wandb.init(project="llm-country-preference", name=f"{c}_sentiment", tags=[f"{c}"])
+    wandb.init(project="llm-country-preference", 
+               name=f"{c}_sentiment", 
+               config={"model":MODEL,
+                       "temperature":TEMPERATURE,
+                       "max_tokens": MAX_TOKENS,
+                       "system_country":c,
+                       "openai_function": functions[0],
+                       "system_prompt": SYSTEM_PROMPT,
+
+                       },
+               tags=[f"{c}"])
     wandb.log({f"{c}_labelled": filtered_df})
 
 if __name__ == '__main__':
