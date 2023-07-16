@@ -203,7 +203,6 @@ def query_openai_api(instructions, actual_query, max_retries=1):
     for n in range(max_retries):
         try:
             response = query_openai_model(instructions, actual_query)
-            print(f"openai response: {response}")
             return response
         except (ConnectionError, requests.HTTPError, requests.Timeout) as e:
             print(f"Request failed, retrying ({n+1}/{max_retries}): {e}")
