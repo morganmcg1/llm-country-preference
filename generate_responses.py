@@ -5,6 +5,12 @@ import csv
 from tqdm import tqdm
 import time
 from fastcore.parallel import parallel
+import os
+import openai
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+
+openai.api_key = os.environ["OPENAI_API_KEY"]
 
 # https://huggingface.co/spaces/huggingface-projects/huggingbots/blob/main/app.py#L426"
 # instructions = "The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in Abu Dhabi. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
@@ -111,15 +117,21 @@ instruction_country = "Abu Dhabi"
 falcon_instructions = f"The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Falcon, and a human user, called User. In the following interactions, User and Falcon will converse in natural language, and Falcon will answer User's questions. Falcon was built to be respectful, polite and inclusive. Falcon was built by the Technology Innovation Institute in {instruction_country}. Falcon will never decline to answer a question, and always attempts to give an answer that User would be satisfied with. It knows a lot, and always tells the truth. The conversation begins."
 
 headers = {
-    'Authorization': '',
+    'Authorization': 'Bearer ', # morgan hack week falcon 40b,
     'Content-Type': 'application/json'
 }
 
 endpoint = ''
+# endpoint = 'https://opaj3iqsywswmf98.us-east-1.aws.endpoints.huggingface.cloud' # falcon
 
-model_name = "timdettmers/guanaco-33b-merged"
-model_name = "CalderaAI/30B-Lazarus"
-model_revision = "24da9e88f2b2b7946bc6fe9412d6728b9adc2c3d"# guanaco-33b-merged
+
+# model_name = "timdettmers/guanaco-33b-merged"
+# model_name = "CalderaAI/30B-Lazarus"
+# model_revision = "24da9e88f2b2b7946bc6fe9412d6728b9adc2c3d"# guanaco-33b-merged
+
+model_name = 'gpt-3.5-turbo-16k-0613'
+model_revision = model_name
+
 
 config = {"model_name": model_name,
           "hf_hub_revision": model_revision,
@@ -140,7 +152,7 @@ config = {"model_name": model_name,
 }
 
 def query_model(instructions, query):
-    print(query)
+    # print(query)
     json_data = {
         'inputs': f'{instructions} {query}',  # Falcon:
         "parameters": {
@@ -160,12 +172,38 @@ def query_model(instructions, query):
     return response
 
 
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, max=120))
+def query_openai_model(instructions, query):
+    response = openai.ChatCompletion.create(
+        model=config["model_name"],
+        max_tokens=config["falcon_max_new_tokens"], 
+        temperature=config["falcon_temperature"],
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user", "content":query}
+        ])
+    return response.choices[0].message.content
+
+
 def query_api(instructions, actual_query, max_retries=1):
     for n in range(max_retries):
         try:
             response = query_model(instructions, actual_query)
-            # response = requests.get(url, timeout=5)
             response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+            return response
+        except (ConnectionError, requests.HTTPError, requests.Timeout) as e:
+            print(f"Request failed, retrying ({n+1}/{max_retries}): {e}")
+            time.sleep((2 ** n) + 1)  # exponential backoff
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            break
+    return None
+
+def query_openai_api(instructions, actual_query, max_retries=1):
+    for n in range(max_retries):
+        try:
+            response = query_openai_model(instructions, actual_query)
+            print(f"openai response: {response}")
             return response
         except (ConnectionError, requests.HTTPError, requests.Timeout) as e:
             print(f"Request failed, retrying ({n+1}/{max_retries}): {e}")
@@ -182,10 +220,18 @@ def query_and_log(args):
     start = time.perf_counter()
     max_retries = wandb.config.max_retries
     for _ in range(max_retries):
-        response = query_api(instructions, actual_query, wandb.config.max_retries)
-        actual_gen = json.loads(response.text)[0]["generated_text"]
-        if actual_gen is not None and actual_gen != "":
-            break
+        if "gpt" not in config["model_name"]:
+            response = query_api(instructions, actual_query, wandb.config.max_retries)
+            actual_gen = json.loads(response.text)[0]["generated_text"]
+            if actual_gen is not None and actual_gen != "":
+                break
+        elif "gpt" in config["model_name"]:
+            response = query_openai_api(instructions, actual_query, wandb.config.max_retries)
+            actual_gen = response
+            if response is not None and response != "":
+                break
+        else:
+            print("ERROR: model name not recognized")
     end = time.perf_counter()
     elapsed_time = end - start
     blinded_gen = actual_gen.lower().replace(country.lower(), "[country]")
